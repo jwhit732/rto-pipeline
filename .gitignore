@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+data/input/
+data/enriched/
+data/drafts/
+data/approved/
+data/logs/
+*.review-progress
