@@ -1,5 +1,5 @@
 import { program } from 'commander';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -15,29 +15,56 @@ program
   .option('--input <path>', 'Approved JSON path (defaults to latest in data/approved/)')
   .option('--dry-run', 'Print what would be sent without calling gws')
   .option('--schedule', 'Queue emails spread across next Mon-Thu 9-11 AM AEST window')
-  .option('--process-queue [path]', 'Send queued emails whose scheduled time has passed');
+  .option('--process-queue [path]', 'Send queued emails whose scheduled time has passed')
+  .option('--no-sync', 'Skip auto-sync to prospect spreadsheet after sending')
+  .allowExcessArguments(true);
 
-const argStart = process.argv.findIndex((a, i) => i >= 2 && a.startsWith('-'));
-program.parse(argStart >= 0 ? process.argv.slice(argStart) : [], { from: 'user' });
+program.parse(process.argv);
 
 const cmdOpts = program.opts<{
   input?: string;
   dryRun: boolean;
   schedule: boolean;
   processQueue?: string | boolean;
+  sync: boolean;
 }>();
 const dryRun = cmdOpts.dryRun || process.env.npm_config_dry_run != null;
 
+/** Find approved emails — checks data/approved/ first, falls back to drafts with status "approved" */
 function findLatestApproved(): string {
-  const dir = 'data/approved';
-  const files = readdirSync(dir)
-    .filter((f) => f.startsWith('outreach-approved-') && f.endsWith('.json'))
-    .sort()
-    .reverse();
-  if (files.length === 0) {
-    throw new Error('No approved JSON in data/approved/ — run npm run review first');
+  // First check for explicit approved files
+  const approvedDir = 'data/approved';
+  if (existsSync(approvedDir)) {
+    const files = readdirSync(approvedDir)
+      .filter((f) => f.startsWith('outreach-approved-') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+    if (files.length > 0) return join(approvedDir, files[0]);
   }
-  return join(dir, files[0]);
+
+  // Fallback: check drafts for any with status "approved" and copy them to approved/
+  const draftsDir = 'data/drafts';
+  if (existsSync(draftsDir)) {
+    const draftFiles = readdirSync(draftsDir)
+      .filter((f) => f.startsWith('outreach-drafts-') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+
+    for (const file of draftFiles) {
+      const path = join(draftsDir, file);
+      const drafts = JSON.parse(readFileSync(path, 'utf8')) as EmailDraft[];
+      const approved = drafts.filter((d) => d.status === 'approved');
+      if (approved.length > 0) {
+        const date = file.replace('outreach-drafts-', '').replace('.json', '');
+        const approvedPath = join(approvedDir, `outreach-approved-${date}.json`);
+        writeFileSync(approvedPath, JSON.stringify(approved, null, 2));
+        logger.info(`Created ${approvedPath} from ${approved.length} approved drafts`);
+        return approvedPath;
+      }
+    }
+  }
+
+  throw new Error('No approved emails found in data/approved/ or data/drafts/ — run review first');
 }
 
 function sleep(ms: number): Promise<void> {
@@ -226,6 +253,31 @@ async function runSend(inputFile: string) {
     if (res.status === 0) logger.info('Batch summary appended to Google Sheet');
     else logger.warn(`Sheets append failed: ${res.stdout?.trim() ?? res.stderr?.trim()}`);
   }
+
+  // Auto-sync send status to prospect spreadsheet
+  if (!dryRun && cmdOpts.sync !== false) {
+    await autoSyncSends();
+  }
+}
+
+async function autoSyncSends() {
+  try {
+    const xlsxPath = config.prospectXlsxPath();
+    if (!existsSync(xlsxPath)) {
+      logger.warn(`Auto-sync skipped — prospect xlsx not found: ${xlsxPath}`);
+      return;
+    }
+    logger.info('Auto-syncing send status to prospect spreadsheet...');
+    const result = spawnSync('node', ['--import', 'tsx', 'src/sync/sync-sends.ts'],
+      { encoding: 'utf8', cwd: process.cwd(), env: { ...process.env }, stdio: 'inherit' });
+    if (result.status === 0) {
+      logger.success('Prospect spreadsheet synced');
+    } else {
+      logger.warn('Auto-sync failed — run "npm run sync-sends" manually');
+    }
+  } catch (err) {
+    logger.warn(`Auto-sync error: ${err}`);
+  }
 }
 
 // ── entry point ──────────────────────────────────────────────────────────────
@@ -242,6 +294,7 @@ async function run() {
   const inputFile = cmdOpts.input ?? findLatestApproved();
 
   if (cmdOpts.schedule) {
+    logger.info('Schedule mode — emails will be queued, not sent immediately');
     await runSchedule(inputFile);
     return;
   }

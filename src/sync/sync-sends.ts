@@ -6,8 +6,9 @@ import { program } from 'commander';
 import { parse } from 'csv-parse/sync';
 import { logger } from '../shared/logger.js';
 
-const DEFAULT_XLSX =
-  'D:\\Projects\\OneDrive\\Desktop\\Coding_projects\\prospect_tracker\\prospects\\asqa_rtos_scored.xlsx';
+import { config } from '../shared/config.js';
+
+const DEFAULT_XLSX = config.prospectXlsxPath();
 
 const SEND_COLS = ['email_sent_at', 'email_status', 'email_subject'] as const;
 type SendCol = (typeof SEND_COLS)[number];

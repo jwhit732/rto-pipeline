@@ -9,15 +9,15 @@ Write a short, personalised cold email to an RTO contact. The email should:
 - Be 120-150 words maximum
 - Reference something specific about their organisation (training packages, industry, location)
 - Explain one concrete benefit of AI for their specific context
-- Include a call-to-action link using markdown format: [here]({{TRACKED_LINK}})
-  Always use "here" as the anchor text — e.g. "take a look here" or "you can see how it works here"
+- Close with this exact CTA paragraph (word-for-word, substituting {{TRACKED_LINK}} as the href):
+  "I'd love to set up a call to discuss what I can offer — or if you'd prefer to explore in your own time, I've built a free AI-powered tool you might find useful. It shows how RTOs can generate planning and compliance docs like Trainer Guides from just a short chat. If you're curious, you can try it here: [Trainer Guide Creator]({{TRACKED_LINK}}). It will ask a few quick questions and then email you a complete, formatted Word document (a free ChatGPT login is all that's required)."
 - Sound human, not salesy — like a knowledgeable colleague reaching out
 - Use Australian English
 
 Do NOT:
 - Use "I hope this email finds you well" or similar clichés
 - Skip the greeting — always open with "Hi [name],"
-- Use a run-on CTA — pick one ask and end cleanly after the link
+- Add anything after the CTA paragraph — end cleanly after the closing parenthesis
 - Open with "I came across [org name]" or any variant — it sounds fake when the email is clearly researched and personalised. Instead, open by referencing something specific about their work or context directly.
 - Make claims about specific ROI or savings without context
 - Use em-dashes (—) anywhere in the email or subject line — use a comma, full stop, or rewrite the sentence instead
@@ -80,7 +80,7 @@ export function applyTrackedLink(
 
   const withLink = escaped
     .replace(mdLink, (_, anchor) => `<a href="${trackedUrl}">${anchor}</a>`)
-    .replace(/\{\{TRACKED_LINK\}\}/g, `<a href="${trackedUrl}">see a quick demo</a>`);
+    .replace(/\{\{TRACKED_LINK\}\}/g, `<a href="${trackedUrl}">Trainer Guide Creator</a>`);
 
   const paragraphs = withLink
     .split(/\n\n+/)

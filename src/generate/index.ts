@@ -1,5 +1,5 @@
 import { program } from 'commander';
-import { createReadStream, readdirSync, writeFileSync } from 'node:fs';
+import { createReadStream, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { parse } from 'csv-parse';
@@ -13,14 +13,16 @@ program
   .option('--input <path>', 'Enriched CSV path (defaults to latest in data/enriched/)')
   .option('--dry-run', 'Generate emails but do not write JSON (prints first 3)')
   .option('--limit <n>', 'Process at most N RTOs', (v) => parseInt(v, 10))
+  .option('--include-test', 'Include test RTOs (codes 99000+) — excluded by default')
   .allowExcessArguments(true)
   .parse(process.argv);
 
-const cmdOpts = program.opts<{ input?: string; dryRun: boolean; limit?: number }>();
+const cmdOpts = program.opts<{ input?: string; dryRun: boolean; limit?: number; includeTest: boolean }>();
 
 const dryRun = cmdOpts.dryRun || process.env.npm_config_dry_run != null;
 const orphan = process.argv.slice(2).find((a) => /^\d+$/.test(a));
 const limit = cmdOpts.limit ?? (orphan !== undefined ? parseInt(orphan, 10) : undefined);
+const includeTest = cmdOpts.includeTest ?? false;
 const opts = { input: cmdOpts.input, dryRun, limit };
 
 export function shouldSkip(rto: RtoEnriched): string | null {
@@ -121,6 +123,35 @@ function buildDraft(
   };
 }
 
+/** Collect RTO codes that already have drafts or have been sent. */
+function alreadyProcessedCodes(): Set<string> {
+  const codes = new Set<string>();
+
+  // Check all existing draft files
+  const draftsDir = 'data/drafts';
+  try {
+    for (const f of readdirSync(draftsDir)) {
+      if (f.startsWith('outreach-drafts-') && f.endsWith('.json')) {
+        const drafts = JSON.parse(readFileSync(join(draftsDir, f), 'utf8')) as { rto_code: string }[];
+        for (const d of drafts) codes.add(d.rto_code);
+      }
+    }
+  } catch { /* no drafts dir yet */ }
+
+  // Check all existing approved files
+  const approvedDir = 'data/approved';
+  try {
+    for (const f of readdirSync(approvedDir)) {
+      if (f.startsWith('outreach-approved-') && f.endsWith('.json')) {
+        const approved = JSON.parse(readFileSync(join(approvedDir, f), 'utf8')) as { rto_code: string }[];
+        for (const a of approved) codes.add(a.rto_code);
+      }
+    }
+  } catch { /* no approved dir yet */ }
+
+  return codes;
+}
+
 async function run() {
   requireConfig('anthropicApiKey', 'linkTrackerUrl', 'linkTrackerDestUrl', 'cronSecret');
 
@@ -128,7 +159,26 @@ async function run() {
   logger.info(`Reading enriched CSV: ${inputPath}`);
 
   const all = await readEnrichedCsv(inputPath);
-  const rtos = opts.limit ? all.slice(0, opts.limit) : all;
+
+  // Filter out RTOs that already have drafts or have been sent
+  const processed = alreadyProcessedCodes();
+  let remaining = all.filter((r) => !processed.has(r.rto_code));
+  if (processed.size > 0) {
+    logger.info(`Skipped ${processed.size} already-processed RTOs`);
+  }
+
+  // Filter out test RTOs (codes 99000+) unless --include-test is passed
+  if (!includeTest) {
+    const before = remaining.length;
+    remaining = remaining.filter((r) => {
+      const code = parseInt(r.rto_code, 10);
+      return isNaN(code) || code < 99000;
+    });
+    const testCount = before - remaining.length;
+    if (testCount > 0) logger.info(`Skipped ${testCount} test RTOs (use --include-test to include)`);
+  }
+
+  const rtos = opts.limit ? remaining.slice(0, opts.limit) : remaining;
   logger.info(`Processing ${rtos.length} RTOs${opts.limit ? ` (limited to ${opts.limit})` : ''}`);
 
   // Split into skippable and to-generate before hitting any APIs

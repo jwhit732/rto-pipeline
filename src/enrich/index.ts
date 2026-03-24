@@ -5,10 +5,11 @@ import { readInputCsv, readEnrichedCsv, writeEnrichedCsv } from './csv-io.js';
 import { readXlsx } from './xlsx-reader.js';
 import { fetchTgaOrganisation, RATE_LIMIT_DELAY_MS, sleep } from './tga-client.js';
 import { logger } from '../shared/logger.js';
+import { config } from '../shared/config.js';
 import type { RtoEnriched, RtoInput } from '../shared/types.js';
 
 program
-  .option('--input <path>', 'Input file path (.csv or .xlsx)', 'D:\\Projects\\OneDrive\\Desktop\\Coding_projects\\prospect_tracker\\prospects\\asqa_rtos_scored.xlsx')
+  .option('--input <path>', 'Input file path (.csv or .xlsx)', config.prospectXlsxPath())
   .option('--dry-run', 'Call API and print results, do not write CSV')
   .option('--from-scratch', 'Ignore existing enriched file and re-enrich everything');
 

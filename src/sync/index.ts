@@ -6,8 +6,7 @@ import { program } from 'commander';
 import { config } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 
-const DEFAULT_XLSX =
-  'D:\\Projects\\OneDrive\\Desktop\\Coding_projects\\prospect_tracker\\prospects\\asqa_rtos_scored.xlsx';
+const DEFAULT_XLSX = config.prospectXlsxPath();
 
 const CLICK_COLS = ['link_clicks', 'first_click', 'last_click', 'click_synced_at'] as const;
 type ClickCol = (typeof CLICK_COLS)[number];
