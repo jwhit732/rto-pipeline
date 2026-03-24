@@ -7,3 +7,4 @@ data/drafts/
 data/approved/
 data/logs/
 *.review-progress
+.claude/settings.local.json
